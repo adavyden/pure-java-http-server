@@ -1,0 +1,130 @@
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
+
+public class HttpServerApp {
+    private static final int PORT = 8080;
+
+    public static void main(String[] args) throws IOException {
+        try (ServerSocket serverSocket = new ServerSocket(PORT)) {
+            System.out.println("HTTP server started on port " + PORT);
+
+            while (true) {
+                Socket socket = serverSocket.accept();
+
+                // Один поток на соединение
+                new Thread(() -> handleClient(socket)).start();
+            }
+        }
+    }
+
+    private static void handleClient(Socket socket) {
+        try (socket;
+             BufferedReader reader = new BufferedReader(
+                     new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+             OutputStream output = socket.getOutputStream()) {
+
+            String requestLine = reader.readLine();
+            if (requestLine == null || requestLine.isBlank()) {
+                return;
+            }
+
+            System.out.println("\n" + requestLine);
+
+            Map<String, String> headers = readHeaders(reader);
+            headers.forEach((name, value) -> System.out.println("> " + name + ": " + value));
+
+            String[] parts = requestLine.split(" ", 3);
+            if (parts.length != 3) {
+                sendResponse(output, 400, "Bad Request",
+                        "text/plain; charset=utf-8", "Bad Request");
+                return;
+            }
+
+            String method = parts[0];
+            String target = parts[1];
+
+            if (!"GET".equals(method)) {
+                sendResponse(output, 405, "Method Not Allowed",
+                        "text/plain; charset=utf-8", "Only GET supported in this demo");
+                return;
+            }
+
+            String path = target.split("\\?", 2)[0];
+
+            switch (path) {
+                case "/" -> sendResponse(output, 200, "OK",
+                        "text/html; charset=utf-8", homePage());
+                case "/hello" -> sendResponse(output, 200, "OK",
+                        "text/plain; charset=utf-8", "Hello JAVA!");
+                case "/health" -> sendResponse(output, 200, "OK",
+                        "application/json; charset=utf-8", "{\"status\":\"UP\"}");
+                default -> sendResponse(output, 404, "Not Found",
+                        "text/plain; charset=utf-8", "Not found");
+            }
+
+        } catch (IOException e) {
+            System.out.println("Client Error: " + e.getMessage());
+        }
+    }
+
+    private static Map<String, String> readHeaders(BufferedReader reader) throws IOException {
+        Map<String, String> headers = new HashMap<>();
+        String line;
+
+        while ((line = reader.readLine()) != null && !line.isBlank()) {
+            int colon = line.indexOf(':');
+            if (colon > 0) {
+                headers.put(
+                        line.substring(0, colon).trim(),
+                        line.substring(colon + 1).trim()
+                );
+            }
+        }
+
+        return headers;
+    }
+
+    private static void sendResponse(OutputStream output,
+                                     int statusCode,
+                                     String statusText,
+                                     String contentType,
+                                     String body) throws IOException {
+
+        byte[] bodyBytes = body.getBytes(StandardCharsets.UTF_8);
+
+        String headers =
+                "HTTP/1.1 " + statusCode + " " + statusText + "\r\n" +
+                        "Content-Type: " + contentType + "\r\n" +
+                        "Content-Length: " + bodyBytes.length + "\r\n" +
+                        "Connection: close\r\n" +
+                        "\r\n";
+
+        output.write(headers.getBytes(StandardCharsets.UTF_8));
+        output.write(bodyBytes);
+        output.flush();
+    }
+
+    private static String homePage() {
+        return """
+                <!doctype html>
+                <html lang="ru">
+                <head>
+                	<meta charset="UTF-8">
+                	<title>Java HTTP Server</title>
+                </head>
+                <body>
+                	<h1>HTTP-сервер на чистой Java работает!</h1>
+                	<p><a href="/hello">/hello</a></p>
+                	<p><a href="/health">/health</a></p>
+                </body>
+                </html>
+                """;
+    }
+}
