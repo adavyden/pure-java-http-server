@@ -52,7 +52,7 @@ public class HttpServerApp {
 
             if (!"GET".equals(method)) {
                 sendResponse(output, 405, "Method Not Allowed",
-                        "text/plain; charset=utf-8", "Only GET supported in this demo");
+                        "text/plain; charset=utf-8", "Only GET supported");
                 return;
             }
 
